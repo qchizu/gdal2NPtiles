@@ -1890,12 +1890,20 @@ def create_overview_tile(
         # dsquery3のバンド1のデータから、dstileに変換
         data = dsquery3.GetRasterBand(1).ReadAsArray()
 
-        # 標高データをRGBに変換（rgb_to_numericalにおいてresolution=1で変換したため、ここでもresolution=1で変換する）
-        rgb_array = numerical_to_rgb(data, 1, options.numerical_srcnodata)
+        # RGBAフラグを取得
+        rgba_output = not options.numerical_rgb_only
+
+        # 標高データをRGB(A)に変換（rgb_to_numericalにおいてresolution=1で変換したため、ここでもresolution=1で変換する）
+        rgb_array = numerical_to_rgb(data, 1, options.numerical_srcnodata, rgba_output)
         
         # RGBデータをdstileに書き込む
-        for i in range(3):
+        bands = 4 if rgba_output else 3
+        for i in range(bands):
             dstile.GetRasterBand(i+1).WriteArray(rgb_array[:,:,i])
+        
+        # アルファバンドの解釈を設定（RGBAの場合）
+        if rgba_output:
+            dstile.GetRasterBand(4).SetColorInterpretation(gdal.GCI_AlphaBand)
                 
         del dsquery2
         del dsquery3
