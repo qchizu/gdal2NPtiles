@@ -30,7 +30,9 @@ https://www.jstage.jst.go.jp/article/geoinformatics/26/4/26_155/_article/-char/j
 
 ## 主な機能
 
-Float32のTIFファイル（VRTファイル含む）から高品質な数値PNGタイル(RGB)を生成することができます。
+Float32のTIFファイル（VRTファイル含む）から高品質な数値PNGタイル(RGBA/RGB)を生成することができます。
+
+デフォルトではRGBAフォーマットのタイルを生成し、無効値を(128,0,0,0)として作成します。
 
 ## 使用環境
 
@@ -50,6 +52,7 @@ python gdal2nptiles.py --numerical input_dem.tif output_folder
 * --numerical-resolution: 数値解像度を設定（デフォルト: 0.01）
 * --numerical-base-tile-resampling: ベースタイルのリサンプリング方法（デフォルト: bilinear）
 * --numerical-overview-tile-resampling: オーバービュータイルのリサンプリング方法（デフォルト: average）
+* --numerical-rgb-only: RGBAの代わりにRGBタイルを出力（デフォルト: RGBA出力）
 
 ## 動作の仕組みとgdal2tiles.pyのコードからの主な変更点
 

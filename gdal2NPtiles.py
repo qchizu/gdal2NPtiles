@@ -95,20 +95,31 @@ webviewer_list = ("all", "google", "openlayers", "leaflet", "mapml", "none")
 logger = logging.getLogger("gdal2tiles")
 
 # ★追加部分ここから
-def numerical_to_rgb(numerical_array, resolution, srcnodata):
+def numerical_to_rgb(numerical_array, resolution, srcnodata, rgba_output=True):
     """
-    数値配列をRGB配列に変換する関数
+    数値配列をRGB(A)配列に変換する関数
     
     :param numerical_array: 2D numpy配列 (float32)
     :param resolution: 分解能
     :param srcnodata: 無効値
-    :return: 3D numpy配列 (uint8) [高さ, 幅, 3]
+    :param rgba_output: TrueならRGBA、FalseならRGB出力
+    :return: 3D numpy配列 (uint8) [高さ, 幅, 3または4]
     """
     height, width = numerical_array.shape
-    rgb_array = numpy.zeros((height, width, 3), dtype=numpy.uint8)
+    bands = 4 if rgba_output else 3
+    rgb_array = numpy.zeros((height, width, bands), dtype=numpy.uint8)
     
     mask = numerical_array == srcnodata
-    rgb_array[mask] = [128, 0, 0]
+    
+    # RGB値の設定
+    rgb_array[mask, 0] = 128
+    rgb_array[mask, 1] = 0
+    rgb_array[mask, 2] = 0
+    
+    # アルファチャンネルの設定（RGBAの場合）
+    if rgba_output:
+        rgb_array[mask, 3] = 0  # 無効値は完全に透明
+        rgb_array[~mask, 3] = 255  # 有効なデータは完全に不透明
     
     valid = ~mask
 
@@ -1457,6 +1468,9 @@ def create_base_tile(tile_job_info: "TileJobInfo", tile_detail: "TileDetail") ->
         # dataをNoneに初期化
         data = None
 
+        rgba_output = not options.numerical_rgb_only
+        bands = 4 if rgba_output else 3
+
         # 読み取りと書き込みのサイズが0でないことを確認
         if rxsize != 0 and rysize != 0 and wxsize != 0 and wysize != 0:
             # 指定された範囲のデータバンドの情報を読み取り
@@ -1500,17 +1514,20 @@ def create_base_tile(tile_job_info: "TileJobInfo", tile_detail: "TileDetail") ->
                 numerical_array_bytes
             )
 
-            # メモリドライバを使用して、指定されたサイズ（tile_size x tile_size）と
-            # 3バンドで新しいタイル（画像）を作成
-            dstile = mem_drv.Create('', tile_size, tile_size, 3)
+            # メモリドライバを使用して、指定されたサイズとバンド数で新しいタイルを作成
+            dstile = mem_drv.Create('', tile_size, tile_size, bands)
 
             # dsquery2のバンド1のデータから、dstileに変換
             data = dsquery.GetRasterBand(1).ReadAsArray()
-            rgb_array = numerical_to_rgb(data, options.numerical_resolution, options.numerical_srcnodata)
+            rgb_array = numerical_to_rgb(data, options.numerical_resolution, options.numerical_srcnodata, rgba_output)
             
             # RGBデータをdstileに書き込む
-            for i in range(3):
+            for i in range(bands):
                 dstile.GetRasterBand(i+1).WriteArray(rgb_array[:,:,i])
+
+            # アルファバンドの解釈を設定（RGBAの場合）
+            if rgba_output:
+                dstile.GetRasterBand(4).SetColorInterpretation(gdal.GCI_AlphaBand)
 
             del dsquery
             del numerical_array
@@ -1694,7 +1711,9 @@ def create_overview_tile(
     # dsquery(3バンド・タイル4つ分) →　dsquery2(1バンド・タイル4つ分)　→　dsquery3(1バンド・タイル1つ分) →　dstile(3バンド・タイル4つ分)
 
     if options.numerical:
-        tilebands = 3 # RGB
+        rgba_output = not options.numerical_rgb_only
+        bands = 4 if rgba_output else 3
+        tilebands = bands
     else:
         tilebands = tile_job_info.nb_data_bands + 1 # RGBA
 
@@ -1706,15 +1725,26 @@ def create_overview_tile(
     # タイルのアルファバンドを設定
     if not options.numerical:
         dsquery.GetRasterBand(tilebands).SetColorInterpretation(gdal.GCI_AlphaBand)
+    if options.numerical and rgba_output:
+        dsquery.GetRasterBand(4).SetColorInterpretation(gdal.GCI_AlphaBand)
     # TODO: fill the null value
     dstile = mem_driver.Create(
         "", tile_job_info.tile_size, tile_job_info.tile_size, tilebands
     )
 
     if options.numerical:
-        # RGB(128,0,0)を書き込み
-        for band in range(1, 4):
-            dsquery.GetRasterBand(band).Fill(128 if band == 1 else 0)
+        # 無効値で初期化
+        if rgba_output:
+            # RGBA: 無効値=(128,0,0,0)
+            dsquery.GetRasterBand(1).Fill(128)
+            dsquery.GetRasterBand(2).Fill(0)
+            dsquery.GetRasterBand(3).Fill(0)
+            dsquery.GetRasterBand(4).Fill(0)
+        else:
+            # RGB: 無効値=(128,0,0)
+            dsquery.GetRasterBand(1).Fill(128)
+            dsquery.GetRasterBand(2).Fill(0)
+            dsquery.GetRasterBand(3).Fill(0)
     else:
         dstile.GetRasterBand(tilebands).SetColorInterpretation(gdal.GCI_AlphaBand)
 
@@ -2127,6 +2157,12 @@ def optparse_init() -> optparse.OptionParser:
         default="average",
         help="Resampling method for numerical overview tiles (default: average)"
     )
+    p.add_option(
+    "--numerical-rgb-only", 
+    dest="numerical_rgb_only", 
+    action="store_true",
+    default=False,
+    help="Output RGB-only tiles instead of RGBA for numerical tiles (default: RGBA)")
     # ★追加部分ここまで
 
     # KML options
@@ -4740,7 +4776,8 @@ def worker_tile_details(
         # print("Debug: Configuring for numerical tiles") # 検証用
         # Override some options for numerical tiles
         options.tiledriver = "PNG"
-        tile_job_info.dataBandsCount = 3  # RGB
+        bands = 4 if not options.numerical_rgb_only else 3
+        tile_job_info.dataBandsCount = bands
         tile_job_info.output_file_path = output_folder
         tile_job_info.tile_extension = "png"
         tile_job_info.tile_driver = "PNG"
