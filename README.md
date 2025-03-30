@@ -20,7 +20,7 @@ x = 2<sup>16 </sup>R + 2<sup>8</sup>G + B
 - x = 2<sup>23</sup>の場合: h = NA
 - x > 2<sup>23</sup>の場合: h = (x-2<sup>24</sup>)u
 
-※無効値は (R, G, B) = (128, 0, 0)。
+※完全に透明な画素は、無効値。
 
 標高値を記録する場合、標高分解能u = 0.01mで、-83,886.07mから+83,886.07mまでの範囲を表すことができ、エベレスト（8,849m）やマリアナ海溝チャレンジャー海淵（-10,920m）などの標高を十分に表現できます。
 
@@ -30,7 +30,9 @@ https://www.jstage.jst.go.jp/article/geoinformatics/26/4/26_155/_article/-char/j
 
 ## 主な機能
 
-Float32のTIFファイル（VRTファイル含む）から高品質な数値PNGタイル(RGB)を生成することができます。
+Float32のTIFファイル（VRTファイル含む）から高品質な数値PNGタイル(RGBA/RGB)を生成することができます。
+
+デフォルトではRGBAフォーマットのタイルを生成し、無効値を(128,0,0,0)として作成します。
 
 ## 使用環境
 
@@ -50,6 +52,7 @@ python gdal2nptiles.py --numerical input_dem.tif output_folder
 * --numerical-resolution: 数値解像度を設定（デフォルト: 0.01）
 * --numerical-base-tile-resampling: ベースタイルのリサンプリング方法（デフォルト: bilinear）
 * --numerical-overview-tile-resampling: オーバービュータイルのリサンプリング方法（デフォルト: average）
+* --numerical-rgb-only: RGBAの代わりにRGBタイルを出力（デフォルト: RGBA出力）
 
 ## 動作の仕組みとgdal2tiles.pyのコードからの主な変更点
 
