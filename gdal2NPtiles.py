@@ -1008,6 +1008,11 @@ def scale_query_to_tile(dsquery, dstile, options, tilefilename=""):
                 params["lossless"] = True
             else:
                 params["quality"] = options.webp_quality
+            # Note: PIL/Pillow's WEBP writer may not preserve RGB values under transparent pixels
+            # even with lossless=True. For numerical tiles, this could be problematic.
+            # However, antialias resampling is not used with numerical tiles (querysize == tile_size)
+            if options.numerical:
+                print("Warning: Using PIL for WEBP with numerical tiles. RGB values under transparent pixels may not be preserved.")
         elif options.tiledriver == "JPEG":
             params["quality"] = options.jpeg_quality
         im1.save(tilefilename, options.tiledriver, **params)
@@ -1414,6 +1419,11 @@ def _get_creation_options(options):
             copts = ["LOSSLESS=True"]
         else:
             copts = ["QUALITY=" + str(options.webp_quality)]
+
+        # For numerical tiles, preserve exact RGB values even under transparent areas
+        # This is critical for preserving the (128,0,0) invalid value with alpha=0
+        if options.numerical:
+            copts.append("EXACT=1")
     elif options.tiledriver == "JPEG":
         copts = ["QUALITY=" + str(options.jpeg_quality)]
     return copts
@@ -2390,6 +2400,13 @@ def options_post_processing(
         if gdal.GetDriverByName(options.tiledriver) is None:
             exit_with_error("WEBP driver is not available")
 
+        # Numerical tiles require lossless compression to preserve exact RGB values
+        if options.numerical:
+            if not options.webp_lossless:
+                print("Warning: Numerical tiles with WEBP require lossless compression.")
+                print("         Automatically enabling --webp-lossless.")
+            options.webp_lossless = True
+
         if not options.webp_lossless:
             if options.webp_quality <= 0 or options.webp_quality > 100:
                 exit_with_error("webp_quality should be in the range [1-100]")
@@ -2397,6 +2414,14 @@ def options_post_processing(
     elif options.tiledriver == "JPEG":
         if gdal.GetDriverByName(options.tiledriver) is None:
             exit_with_error("JPEG driver is not available")
+
+        # JPEG is not compatible with numerical tiles (lossy compression)
+        if options.numerical:
+            exit_with_error(
+                "JPEG driver is not supported with --numerical mode.",
+                "Numerical tiles require lossless compression to preserve exact RGB values.\n"
+                "Use --tiledriver=PNG or --tiledriver=WEBP instead."
+            )
 
         if options.jpeg_quality <= 0 or options.jpeg_quality > 100:
             exit_with_error("jpeg_quality should be in the range [1-100]")
@@ -4782,13 +4807,23 @@ def worker_tile_details(
     # ★変更部分ここから
     if options.numerical:
         # print("Debug: Configuring for numerical tiles") # 検証用
-        # Override some options for numerical tiles
-        options.tiledriver = "PNG"
+        # Configure for numerical tiles (support PNG and WEBP)
         bands = 4 if not options.numerical_rgb_only else 3
         tile_job_info.dataBandsCount = bands
         tile_job_info.output_file_path = output_folder
-        tile_job_info.tile_extension = "png"
-        tile_job_info.tile_driver = "PNG"
+
+        # Set tile extension and driver based on user's tiledriver option
+        if options.tiledriver == "WEBP":
+            tile_job_info.tile_extension = "webp"
+            tile_job_info.tile_driver = "WEBP"
+        elif options.tiledriver == "PNG":
+            tile_job_info.tile_extension = "png"
+            tile_job_info.tile_driver = "PNG"
+        else:
+            # Should not reach here due to validation, but keep for safety
+            tile_job_info.tile_extension = "png"
+            tile_job_info.tile_driver = "PNG"
+
         tile_job_info.tile_size = options.tilesize
     # ★変更部分ここまで
 

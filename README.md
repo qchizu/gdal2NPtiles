@@ -44,7 +44,13 @@ GDALが使える環境が必要です。
 
 基本的な使用方法は以下のとおりです。
 
+```bash
+# PNG形式（デフォルト）
 python gdal2nptiles.py --numerical input_dem.tif output_folder
+
+# WEBP形式（lossless圧縮、ファイルサイズを削減可能）
+python gdal2nptiles.py --numerical --tiledriver=WEBP input_dem.tif output_folder
+```
 
 ### 主なオプション：
 
@@ -53,6 +59,10 @@ python gdal2nptiles.py --numerical input_dem.tif output_folder
 * --numerical-base-tile-resampling: ベースタイルのリサンプリング方法（デフォルト: bilinear）
 * --numerical-overview-tile-resampling: オーバービュータイルのリサンプリング方法（デフォルト: average）
 * --numerical-rgb-only: RGBAの代わりにRGBタイルを出力（デフォルト: RGBA出力）
+* --tiledriver: タイルフォーマット（PNG/WEBP/JPEG、デフォルト: PNG）
+  * **重要**: `--numerical`モードでWEBPを使用する場合、RGB値の正確な保持のため自動的にlossless圧縮が有効化されます
+  * **重要**: `--numerical`モードではJPEGは使用できません（ロスレス圧縮が必要なため）
+* --webp-lossless: WEBPでlossless圧縮を使用する（`--numerical`モードでは自動的に有効化）
 
 ## 動作の仕組みとgdal2tiles.pyのコードからの主な変更点
 
