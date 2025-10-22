@@ -38,7 +38,11 @@ Float32のTIFファイル（VRTファイル含む）から高品質な数値PNG�
 
 GDALが使える環境が必要です。
 
-また、numpy、struct、zoomが必要です。
+また、SciPyが必要です。以下のコマンドでインストールできます。
+
+```bash
+pip install scipy
+```
 
 ## 使用方法
 
