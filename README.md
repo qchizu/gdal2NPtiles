@@ -64,8 +64,8 @@ python gdal2nptiles.py --numerical --tiledriver=WEBP input_dem.tif output_folder
 * --numerical-overview-tile-resampling: オーバービュータイルのリサンプリング方法（デフォルト: average）
 * --numerical-rgb-only: RGBAの代わりにRGBタイルを出力（デフォルト: RGBA出力）
 * --tiledriver: タイルフォーマット（PNG/WEBP/JPEG、デフォルト: PNG）
-  * **重要**: `--numerical`モードでWEBPを使用する場合、RGB値の正確な保持のため自動的にlossless圧縮が有効化されます
-  * **重要**: `--numerical`モードではJPEGは使用できません（ロスレス圧縮が必要なため）
+  * `--numerical`モードでWEBPを使用する場合、RGB値の正確な保持のため自動的にlossless圧縮が有効化されます。WEBPを使用するとタイルセットのサイズがPNGの約60％に削減できます。
+  * `--numerical`モードではJPEGは使用できません（ロスレス圧縮が必要なため）。
 * --webp-lossless: WEBPでlossless圧縮を使用する（`--numerical`モードでは自動的に有効化）
 
 ## 動作の仕組みとgdal2tiles.pyのコードからの主な変更点
