@@ -3342,10 +3342,10 @@ class GDAL2Tiles(object):
         raises Gdal2TilesError if the dataset does not contain anything inside this geo_query
         """
         geotran = ds.GetGeoTransform()
-        rx = int((ulx - geotran[0]) / geotran[1] + 0.001)
-        ry = int((uly - geotran[3]) / geotran[5] + 0.001)
-        rxsize = max(1, int((lrx - ulx) / geotran[1] + 0.5))
-        rysize = max(1, int((lry - uly) / geotran[5] + 0.5))
+        rx = round((ulx - geotran[0]) / geotran[1])
+        ry = round((uly - geotran[3]) / geotran[5])
+        rxsize = max(1, round((lrx - ulx) / geotran[1]))
+        rysize = max(1, round((lry - uly) / geotran[5]))
 
         if not querysize:
             wxsize, wysize = rxsize, rysize
@@ -3356,23 +3356,23 @@ class GDAL2Tiles(object):
         wx = 0
         if rx < 0:
             rxshift = abs(rx)
-            wx = int(wxsize * (float(rxshift) / rxsize))
+            wx = round(wxsize * (float(rxshift) / rxsize))
             wxsize = wxsize - wx
-            rxsize = rxsize - int(rxsize * (float(rxshift) / rxsize))
+            rxsize = rxsize - round(rxsize * (float(rxshift) / rxsize))
             rx = 0
         if rx + rxsize > ds.RasterXSize:
-            wxsize = int(wxsize * (float(ds.RasterXSize - rx) / rxsize))
+            wxsize = round(wxsize * (float(ds.RasterXSize - rx) / rxsize))
             rxsize = ds.RasterXSize - rx
 
         wy = 0
         if ry < 0:
             ryshift = abs(ry)
-            wy = int(wysize * (float(ryshift) / rysize))
+            wy = round(wysize * (float(ryshift) / rysize))
             wysize = wysize - wy
-            rysize = rysize - int(rysize * (float(ryshift) / rysize))
+            rysize = rysize - round(rysize * (float(ryshift) / rysize))
             ry = 0
         if ry + rysize > ds.RasterYSize:
-            wysize = int(wysize * (float(ds.RasterYSize - ry) / rysize))
+            wysize = round(wysize * (float(ds.RasterYSize - ry) / rysize))
             rysize = ds.RasterYSize - ry
 
         return (rx, ry, rxsize, rysize), (wx, wy, wxsize, wysize)
