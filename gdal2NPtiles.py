@@ -1008,6 +1008,11 @@ def scale_query_to_tile(dsquery, dstile, options, tilefilename=""):
                 params["lossless"] = True
             else:
                 params["quality"] = options.webp_quality
+            # Note: PIL/Pillow's WEBP writer may not preserve RGB values under transparent pixels
+            # even with lossless=True. For numerical tiles, this could be problematic.
+            # However, antialias resampling is not used with numerical tiles (querysize == tile_size)
+            if options.numerical:
+                print("Warning: Using PIL for WEBP with numerical tiles. RGB values under transparent pixels may not be preserved.")
         elif options.tiledriver == "JPEG":
             params["quality"] = options.jpeg_quality
         im1.save(tilefilename, options.tiledriver, **params)
@@ -1414,6 +1419,11 @@ def _get_creation_options(options):
             copts = ["LOSSLESS=True"]
         else:
             copts = ["QUALITY=" + str(options.webp_quality)]
+
+        # For numerical tiles, preserve exact RGB values even under transparent areas
+        # This is critical for preserving the (128,0,0) invalid value with alpha=0
+        if options.numerical:
+            copts.append("EXACT=1")
     elif options.tiledriver == "JPEG":
         copts = ["QUALITY=" + str(options.jpeg_quality)]
     return copts
@@ -2390,6 +2400,13 @@ def options_post_processing(
         if gdal.GetDriverByName(options.tiledriver) is None:
             exit_with_error("WEBP driver is not available")
 
+        # Numerical tiles require lossless compression to preserve exact RGB values
+        if options.numerical:
+            if not options.webp_lossless:
+                print("Warning: Numerical tiles with WEBP require lossless compression.")
+                print("         Automatically enabling --webp-lossless.")
+            options.webp_lossless = True
+
         if not options.webp_lossless:
             if options.webp_quality <= 0 or options.webp_quality > 100:
                 exit_with_error("webp_quality should be in the range [1-100]")
@@ -2397,6 +2414,14 @@ def options_post_processing(
     elif options.tiledriver == "JPEG":
         if gdal.GetDriverByName(options.tiledriver) is None:
             exit_with_error("JPEG driver is not available")
+
+        # JPEG is not compatible with numerical tiles (lossy compression)
+        if options.numerical:
+            exit_with_error(
+                "JPEG driver is not supported with --numerical mode.",
+                "Numerical tiles require lossless compression to preserve exact RGB values.\n"
+                "Use --tiledriver=PNG or --tiledriver=WEBP instead."
+            )
 
         if options.jpeg_quality <= 0 or options.jpeg_quality > 100:
             exit_with_error("jpeg_quality should be in the range [1-100]")
@@ -3317,10 +3342,10 @@ class GDAL2Tiles(object):
         raises Gdal2TilesError if the dataset does not contain anything inside this geo_query
         """
         geotran = ds.GetGeoTransform()
-        rx = int((ulx - geotran[0]) / geotran[1] + 0.001)
-        ry = int((uly - geotran[3]) / geotran[5] + 0.001)
-        rxsize = max(1, int((lrx - ulx) / geotran[1] + 0.5))
-        rysize = max(1, int((lry - uly) / geotran[5] + 0.5))
+        rx = round((ulx - geotran[0]) / geotran[1])
+        ry = round((uly - geotran[3]) / geotran[5])
+        rxsize = max(1, round((lrx - ulx) / geotran[1]))
+        rysize = max(1, round((lry - uly) / geotran[5]))
 
         if not querysize:
             wxsize, wysize = rxsize, rysize
@@ -3331,23 +3356,23 @@ class GDAL2Tiles(object):
         wx = 0
         if rx < 0:
             rxshift = abs(rx)
-            wx = int(wxsize * (float(rxshift) / rxsize))
+            wx = round(wxsize * (float(rxshift) / rxsize))
             wxsize = wxsize - wx
-            rxsize = rxsize - int(rxsize * (float(rxshift) / rxsize))
+            rxsize = rxsize - round(rxsize * (float(rxshift) / rxsize))
             rx = 0
         if rx + rxsize > ds.RasterXSize:
-            wxsize = int(wxsize * (float(ds.RasterXSize - rx) / rxsize))
+            wxsize = round(wxsize * (float(ds.RasterXSize - rx) / rxsize))
             rxsize = ds.RasterXSize - rx
 
         wy = 0
         if ry < 0:
             ryshift = abs(ry)
-            wy = int(wysize * (float(ryshift) / rysize))
+            wy = round(wysize * (float(ryshift) / rysize))
             wysize = wysize - wy
-            rysize = rysize - int(rysize * (float(ryshift) / rysize))
+            rysize = rysize - round(rysize * (float(ryshift) / rysize))
             ry = 0
         if ry + rysize > ds.RasterYSize:
-            wysize = int(wysize * (float(ds.RasterYSize - ry) / rysize))
+            wysize = round(wysize * (float(ds.RasterYSize - ry) / rysize))
             rysize = ds.RasterYSize - ry
 
         return (rx, ry, rxsize, rysize), (wx, wy, wxsize, wysize)
@@ -4782,13 +4807,23 @@ def worker_tile_details(
     # ★変更部分ここから
     if options.numerical:
         # print("Debug: Configuring for numerical tiles") # 検証用
-        # Override some options for numerical tiles
-        options.tiledriver = "PNG"
+        # Configure for numerical tiles (support PNG and WEBP)
         bands = 4 if not options.numerical_rgb_only else 3
         tile_job_info.dataBandsCount = bands
         tile_job_info.output_file_path = output_folder
-        tile_job_info.tile_extension = "png"
-        tile_job_info.tile_driver = "PNG"
+
+        # Set tile extension and driver based on user's tiledriver option
+        if options.tiledriver == "WEBP":
+            tile_job_info.tile_extension = "webp"
+            tile_job_info.tile_driver = "WEBP"
+        elif options.tiledriver == "PNG":
+            tile_job_info.tile_extension = "png"
+            tile_job_info.tile_driver = "PNG"
+        else:
+            # Should not reach here due to validation, but keep for safety
+            tile_job_info.tile_extension = "png"
+            tile_job_info.tile_driver = "PNG"
+
         tile_job_info.tile_size = options.tilesize
     # ★変更部分ここまで
 
